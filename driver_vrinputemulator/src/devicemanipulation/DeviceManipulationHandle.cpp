@@ -104,8 +104,8 @@ int lhIndex[4], nbOfLh;
 vr::HmdVector3_t baseStationPos;
 vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
 
-// Can configure offset to be anything. I found 0.01 (1%) to be the best for me.
-float offset = 0.01;
+// Can configure offset to be anything. I found 0.011 (1.1%) to be the best for me.
+float offset = 0.011;
 
 bool DeviceManipulationHandle::handlePoseUpdate(uint32_t& unWhichDevice, vr::DriverPose_t& newPose, uint32_t unPoseStructSize) {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
