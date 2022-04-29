@@ -7,6 +7,7 @@
 #include "../hooks/IVRServerDriverHost005Hooks.h"
 #include "../hooks/IVRControllerComponent001Hooks.h"
 #include "../hooks/IVRDriverInput001Hooks.h"
+#include "matrix_utils.h"
 
 #undef WIN32_LEAN_AND_MEAN
 #undef NOSOUND
@@ -24,7 +25,6 @@ namespace driver {
 		lhs[0] += rhs.v[0]; \
 		lhs[1] += rhs.v[1]; \
 		lhs[2] += rhs.v[2];
-
 
 bool DeviceManipulationHandle::touchpadEmulationEnabledFlag = true;
 
@@ -73,6 +73,40 @@ AnalogInputRemapping DeviceManipulationHandle::getAnalogInputRemapping(uint32_t 
 	}
 }
 
+vr::HmdVector3_t ToEulerAngles(const vr::HmdQuaternion_t& q) {
+	vr::HmdVector3_t angles;    //yaw pitch roll
+	const auto x = q.x;
+	const auto y = q.y;
+	const auto z = q.z;
+	const auto w = q.w;
+
+	// roll (x-axis rotation)
+	double sinr_cosp = 2 * (w * x + y * z);
+	double cosr_cosp = 1 - 2 * (x * x + y * y);
+	angles.v[2] = std::atan2(sinr_cosp, cosr_cosp);
+
+	// pitch (y-axis rotation)
+	double sinp = 2 * (w * y - z * x);
+	if (std::abs(sinp) >= 1)
+		angles.v[1] = std::copysign(3.141592 / 2, sinp); // use 90 degrees if out of range
+	else
+		angles.v[1] = std::asin(sinp);
+
+	// yaw (z-axis rotation)
+	double siny_cosp = 2 * (w * z + x * y);
+	double cosy_cosp = 1 - 2 * (y * y + z * z);
+	angles.v[0] = std::atan2(siny_cosp, cosy_cosp);
+	return angles;
+}
+
+bool gotLighthouse = false;
+int lhIndex[4], nbOfLh;
+vr::HmdVector3_t baseStationPos;
+vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
+
+// Can configure offset to be anything. I found 0.01 (1%) to be the best for me.
+float offset = 0.01;
+
 bool DeviceManipulationHandle::handlePoseUpdate(uint32_t& unWhichDevice, vr::DriverPose_t& newPose, uint32_t unPoseStructSize) {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 
@@ -114,7 +148,37 @@ bool DeviceManipulationHandle::handlePoseUpdate(uint32_t& unWhichDevice, vr::Dri
 
 	} else {
 		if (m_offsetsEnabled) {
-			if (m_worldFromDriverRotationOffset.w != 1.0 || m_worldFromDriverRotationOffset.x != 0.0
+			if (m_eDeviceClass == vr::TrackedDeviceClass_HMD) { // pimax base station offset using rotation as settings
+				if (!gotLighthouse) {
+					vr::TrackedDeviceIndex_t all_trackers[vr::k_unMaxTrackedDeviceCount];
+					vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0, poses, vr::k_unMaxTrackedDeviceCount);
+					nbOfLh = 0;
+					for (size_t i = 0; i < vr::k_unMaxTrackedDeviceCount; i++)
+					{
+						vr::PropertyContainerHandle_t deviceContainer = vr::VRPropertiesRaw()->TrackedDeviceToPropertyContainer(i);
+						vr::ETrackedPropertyError error;
+						int32_t deviceClass = vr::VRProperties()->GetInt32Property(deviceContainer, vr::ETrackedDeviceProperty::Prop_DeviceClass_Int32, &error);
+						if (error != vr::ETrackedPropertyError::TrackedProp_Success) {
+							continue;
+						}
+						if (deviceClass == vr::TrackedDeviceClass_TrackingReference && nbOfLh < 4) {
+							lhIndex[nbOfLh] = i;
+							nbOfLh++;
+						}
+					}
+					gotLighthouse = true;
+				}
+				vr::HmdVector3_t angles = ToEulerAngles(m_worldFromDriverRotationOffset);
+				// yaw = 0: first base station, yaw = 5: second base station, yaw = 10: third base station, yaw = 15: fourth base station, other: no offset.
+				int64_t yaw = round(angles.v[1] / 5 * 57.295);
+				if (yaw >= 0 && yaw < 4) {
+					vr::HmdVector3_t baseStationPos = GetPosition(poses[lhIndex[yaw]].mDeviceToAbsoluteTracking);
+					newPose.vecPosition[0] += (newPose.vecPosition[0] - baseStationPos.v[0]) * offset;
+					newPose.vecPosition[1] += (newPose.vecPosition[1] - baseStationPos.v[1]) * offset;
+					newPose.vecPosition[2] += (newPose.vecPosition[2] - baseStationPos.v[2]) * offset;
+				}
+			}
+			else if (m_worldFromDriverRotationOffset.w != 1.0 || m_worldFromDriverRotationOffset.x != 0.0
 				|| m_worldFromDriverRotationOffset.y != 0.0 || m_worldFromDriverRotationOffset.z != 0.0) {
 				newPose.qWorldFromDriverRotation = m_worldFromDriverRotationOffset * newPose.qWorldFromDriverRotation;
 			}
@@ -155,7 +219,6 @@ bool DeviceManipulationHandle::handlePoseUpdate(uint32_t& unWhichDevice, vr::Dri
 		return true;
 	}
 }
-
 
 void DeviceManipulationHandle::ll_sendPoseUpdate(const vr::DriverPose_t& newPose) {
 	if (m_deviceDriverInterfaceVersion == 4) {
