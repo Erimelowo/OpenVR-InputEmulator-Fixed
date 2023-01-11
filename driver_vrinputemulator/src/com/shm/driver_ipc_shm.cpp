@@ -56,7 +56,7 @@ void IpcShmCommunicator::_ipcThreadFunc(IpcShmCommunicator* _this, ServerDriver 
 		while (!_this->_ipcThreadStopFlag) {
 			try {
 				ipc::Request message;
-				uint64_t recv_size;
+				size_t recv_size;
 				unsigned priority;
 				boost::posix_time::ptime timeout = boost::posix_time::microsec_clock::universal_time() + boost::posix_time::milliseconds(50);
 				if (messageQueue.timed_receive(&message, sizeof(ipc::Request), recv_size, priority, timeout)) {
@@ -607,6 +607,8 @@ void IpcShmCommunicator::_ipcThreadFunc(IpcShmCommunicator* _this, ServerDriver 
 										resp.msg.dm_deviceOffsets.driverFromHeadTranslationOffset = info->driverFromHeadTranslationOffset();
 										resp.msg.dm_deviceOffsets.deviceRotationOffset = info->deviceRotationOffset();
 										resp.msg.dm_deviceOffsets.deviceTranslationOffset = info->deviceTranslationOffset();
+										resp.msg.dm_deviceOffsets.clientRotationOffset = info->clientRotationOffset();
+										resp.msg.dm_deviceOffsets.clientTranslationOffset = info->clientTranslationOffset();
 									}
 								}
 								if (resp.status != ipc::ReplyStatus::Ok) {
@@ -653,6 +655,12 @@ void IpcShmCommunicator::_ipcThreadFunc(IpcShmCommunicator* _this, ServerDriver 
 											if (message.msg.dm_DeviceOffsets.deviceTranslationOffsetValid) {
 												info->deviceTranslationOffset() = message.msg.dm_DeviceOffsets.deviceTranslationOffset;
 											}
+											if (message.msg.dm_DeviceOffsets.clientRotationOffsetValid) {
+												info->clientRotationOffset() = message.msg.dm_DeviceOffsets.clientRotationOffset;
+											}
+											if (message.msg.dm_DeviceOffsets.clientTranslationOffsetValid) {
+												info->clientTranslationOffset() = message.msg.dm_DeviceOffsets.clientTranslationOffset;
+											}
 											break;
 										case 1:
 											if (message.msg.dm_DeviceOffsets.worldFromDriverRotationOffsetValid) {
@@ -672,6 +680,12 @@ void IpcShmCommunicator::_ipcThreadFunc(IpcShmCommunicator* _this, ServerDriver 
 											}
 											if (message.msg.dm_DeviceOffsets.deviceTranslationOffsetValid) {
 												info->deviceTranslationOffset() = info->deviceTranslationOffset() + message.msg.dm_DeviceOffsets.deviceTranslationOffset;
+											}
+											if (message.msg.dm_DeviceOffsets.clientRotationOffsetValid) {
+												info->clientRotationOffset() = message.msg.dm_DeviceOffsets.clientRotationOffset * info->clientRotationOffset();
+											}
+											if (message.msg.dm_DeviceOffsets.clientTranslationOffsetValid) {
+												info->clientTranslationOffset() = info->clientTranslationOffset() + message.msg.dm_DeviceOffsets.clientTranslationOffset;
 											}
 											break;
 										}
