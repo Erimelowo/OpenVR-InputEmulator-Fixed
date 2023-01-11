@@ -104,8 +104,9 @@ int lhIndex[4], nbOfLh;
 vr::HmdVector3_t baseStationPos;
 vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
 
-// Can configure offset to be anything. I found 0.011 (1.1%) to be the best for me.
-float offset = 0.011;
+// Can configure offset to be anything. I found 1.11111...% to be the best for me.
+static float defaultOffset = 1.0/90.0;
+float offset = defaultOffset;
 
 bool DeviceManipulationHandle::handlePoseUpdate(uint32_t& unWhichDevice, vr::DriverPose_t& newPose, uint32_t unPoseStructSize) {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
@@ -169,7 +170,7 @@ bool DeviceManipulationHandle::handlePoseUpdate(uint32_t& unWhichDevice, vr::Dri
 					gotLighthouse = true;
 				}
 				vr::HmdVector3_t angles = ToEulerAngles(m_worldFromDriverRotationOffset);
-				// yaw = 0: first base station, yaw = 5: second base station, yaw = 10: third base station, yaw = 15: fourth base station, other: no offset.
+				// yaw = 0: first base station, yaw = 5: second base station, yaw = 10: third base station, yaw = 15: fourth base station
 				int64_t yaw = round(angles.v[1] / 5 * 57.295);
 				if (yaw >= 0 && yaw < 4) {
 					vr::HmdVector3_t baseStationPos = GetPosition(poses[lhIndex[yaw]].mDeviceToAbsoluteTracking);
@@ -182,7 +183,10 @@ bool DeviceManipulationHandle::handlePoseUpdate(uint32_t& unWhichDevice, vr::Dri
 				|| m_worldFromDriverRotationOffset.y != 0.0 || m_worldFromDriverRotationOffset.z != 0.0) {
 				newPose.qWorldFromDriverRotation = m_worldFromDriverRotationOffset * newPose.qWorldFromDriverRotation;
 			}
-			if (m_worldFromDriverTranslationOffset.v[0] != 0.0 || m_worldFromDriverTranslationOffset.v[1] != 0.0 || m_worldFromDriverTranslationOffset.v[2] != 0.0) {
+			if (m_eDeviceClass == vr::TrackedDeviceClass_HMD) { // Debug tweak % lighthouse offset
+				offset = defaultOffset + m_worldFromDriverTranslationOffset.v[0] / 100;
+			}
+			else if (m_worldFromDriverTranslationOffset.v[0] != 0.0 || m_worldFromDriverTranslationOffset.v[1] != 0.0 || m_worldFromDriverTranslationOffset.v[2] != 0.0) {
 				VECTOR_ADD(newPose.vecWorldFromDriverTranslation, m_worldFromDriverTranslationOffset);
 			}
 			if (m_driverFromHeadRotationOffset.w != 1.0 || m_driverFromHeadRotationOffset.x != 0.0
